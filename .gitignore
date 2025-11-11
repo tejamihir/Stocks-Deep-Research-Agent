@@ -1,48 +1,5 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.egg-info/
-dist/
-build/
-
-# Virtual Environment
-.venv/
-venv/
-ENV/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
 .DS_Store
-Thumbs.db
-
-# Environment variables
-.env
-*.env
-
-# Data files (uncomment if you want to exclude data)
-# data/
-# data/chroma_db/
-# data/Annual Reports/
-# data/reddit_output/
-
-# Logs
-*.log
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# API keys and secrets
-*_key.txt
-*_keys.txt
-secrets.json
-
+__pycache__/
+.venv/
+data/chroma_db/
+data/Annual Reports/
