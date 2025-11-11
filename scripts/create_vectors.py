@@ -1,225 +1,249 @@
+from pathlib import Path
+
+from typing import List
+
 import pandas as pd
 
+from chromadb import PersistentClient
 from sentence_transformers import SentenceTransformer
 
-from chromadb import PersistentClient
-
-
-
-# Initialize Chroma client (using local persistence)
-
-client = PersistentClient(path="/Users/mihirrao/mihir/Stocks-Deep-Research-Agent/data/chroma_db")
-
-
-
-# Create (or get) a collection named 'financial_ratios'
-
-collection = client.get_or_create_collection(name="cashflow_statement")
-
-
-
-# Load CSV containing financial ratios (adjust file path)
-
-csv_file = "/Users/mihirrao/mihir/Stocks-Deep-Research-Agent/data/yfinance_outputs/cashflow.csv"
-
-df = pd.read_csv(csv_file)
-
-
-
-# Initialize sentence transformer model for embeddings
-
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
-
-
-# Find ticker column (case-insensitive)
-
-ticker_col = None
-
-for col in df.columns:
-
-    if col.lower() in ['ticker']:
-
-        ticker_col = col
-
-        break
-
-if ticker_col is None:
-
-    raise ValueError("No ticker column found. Please ensure CSV has a 'ticker', 'symbol', 'stock', or 'ticker_symbol' column.")
-
-
-
-# Structure: ticker >> column >> column value
-
-# Prepare lists for documents, metadatas, and IDs
-
-texts = []
-
-metadatas = []
-
-ids = []
-
-
-
-# Iterate through each row (ticker)
-
-for row_idx, row in df.iterrows():
-
-    ticker = str(row[ticker_col]).strip()
-
-    
-
-    # For each column (excluding the ticker column), create a separate document
-
-    for col in df.columns:
-
-        if col == ticker_col:
-
-            continue  # Skip ticker column itself
-
-        
-
-        column_value = row[col]
-
-        
-
-        # Skip NaN/None values
-
-        if pd.isna(column_value):
-
-            continue
-
-        
-
-        # Create document text: "Column Name: Column Value"
-
-        doc_text = f"{col}: {column_value}"
-
-        texts.append(doc_text)
-
-        
-
-        # Create metadata with hierarchy: ticker > column > value
-
-        metadata = {
-
-            "ticker": ticker,
-
-            "column": col,
-
-            "value": str(column_value),
-
-            "row_index": int(row_idx)
-
-        }
-
-        metadatas.append(metadata)
-
-        
-
-        # Create ID: ticker_column_index
-
-        # Format: {ticker}_{column_name}_{row_index}
-
-        # Replace spaces/special chars in column name for cleaner IDs
-
-        clean_col = col.replace(" ", "_").replace("/", "_").replace("-", "_")
-
-        vector_id = f"{ticker}_{clean_col}_{row_idx}"
-
-        ids.append(vector_id)
-
-
-
-# Batch size for ChromaDB (to avoid max batch size error)
-# ChromaDB has a max batch size limit (~5461), so we'll use a smaller safe batch size
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = REPO_ROOT / "data"
+BALANCE_SHEET_CSV = DATA_DIR / "yfinance_outputs" / "balance_sheet.csv"
+INCOME_STATEMENT_CSV = DATA_DIR / "yfinance_outputs" / "financials.csv"
+TICKER_INFO_CSV = DATA_DIR / "yfinance_outputs" / "sp500_tickers_sectors.csv"
+CHROMA_PATH = DATA_DIR / "chroma_db"
 BATCH_SIZE = 5000
 
-print(f"Total documents to process: {len(texts)}")
-print(f"Processing in batches of {BATCH_SIZE}...")
+model = SentenceTransformer("all-MiniLM-L6-v2")
+client = PersistentClient(path=str(CHROMA_PATH))
 
-# Generate embeddings and add to collection in batches
-for i in range(0, len(texts), BATCH_SIZE):
-    batch_texts = texts[i:i+BATCH_SIZE]
-    batch_metadatas = metadatas[i:i+BATCH_SIZE]
-    batch_ids = ids[i:i+BATCH_SIZE]
-    
-    # Generate embeddings for this batch
-    print(f"Generating embeddings for batch {i//BATCH_SIZE + 1} ({len(batch_texts)} documents)...")
-    batch_embeddings = model.encode(batch_texts).tolist()
-    
-    # Add batch to collection
-    print(f"Adding batch {i//BATCH_SIZE + 1} to collection...")
-    collection.add(
-        ids=batch_ids,
-        documents=batch_texts,
-        embeddings=batch_embeddings,
-        metadatas=batch_metadatas
+balance_sheet_collection = client.get_or_create_collection(name="balance_sheet")
+income_statement_collection = client.get_or_create_collection(name="financial_ratios")
+ticker_info_collection = client.get_or_create_collection(name="ticker_info")
+
+
+def ingest_balance_sheet_documents(
+    csv_path: Path = BALANCE_SHEET_CSV, batch_size: int = BATCH_SIZE
+) -> int:
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Balance sheet CSV not found at {csv_path}")
+
+    df = pd.read_csv(csv_path)
+    ticker_col = next((c for c in df.columns if c.lower() == "ticker"), None)
+    if ticker_col is None:
+        raise ValueError(
+            "No ticker column found. Ensure the balance sheet CSV has a 'ticker' column."
+        )
+
+    documents: List[str] = []
+    metadatas: List[dict] = []
+    ids: List[str] = []
+
+    for row_idx, row in df.iterrows():
+        ticker = str(row[ticker_col]).strip()
+        for col in df.columns:
+            if col == ticker_col:
+                continue
+            value = row[col]
+            if pd.isna(value):
+                continue
+
+            documents.append(f"{col}: {value}")
+            metadatas.append(
+                {
+                    "ticker": ticker,
+                    "column": col,
+                    "value": str(value),
+                    "row_index": int(row_idx),
+                }
+            )
+            clean_col = str(col).replace(" ", "_").replace("/", "_").replace("-", "_")
+            ids.append(f"{ticker}_{clean_col}_{row_idx}")
+
+    print(f"Total balance sheet documents to process: {len(documents)}")
+    try:
+        balance_sheet_collection.delete(where={"*": "*"})
+        print("Cleared existing records from balance_sheet collection.")
+    except Exception as exc:
+        print(f"Warning: failed to clear balance_sheet collection: {exc}")
+
+    for start in range(0, len(documents), batch_size):
+        end = start + batch_size
+        batch_documents = documents[start:end]
+        batch_metadatas = metadatas[start:end]
+        batch_ids = ids[start:end]
+
+        print(
+            f"Encoding balance sheet batch {start // batch_size + 1} with {len(batch_documents)} documents..."
+        )
+        embeddings = model.encode(batch_documents).tolist()
+        balance_sheet_collection.add(
+            ids=batch_ids,
+            documents=batch_documents,
+            embeddings=embeddings,
+            metadatas=batch_metadatas,
+        )
+
+    return len(documents)
+
+
+def ingest_income_statement_documents(
+    csv_path: Path = INCOME_STATEMENT_CSV, batch_size: int = BATCH_SIZE
+) -> int:
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Income statement CSV not found at {csv_path}")
+
+    df = pd.read_csv(csv_path)
+    ticker_col = next((c for c in df.columns if c.lower() == "ticker"), None)
+    if ticker_col is None:
+        raise ValueError(
+            "No ticker column found. Ensure the income statement CSV has a 'ticker' column."
+        )
+
+    documents: List[str] = []
+    metadatas: List[dict] = []
+    ids: List[str] = []
+
+    for row_idx, row in df.iterrows():
+        ticker = str(row[ticker_col]).strip()
+        for col in df.columns:
+            if col == ticker_col:
+                continue
+            value = row[col]
+            if pd.isna(value):
+                continue
+
+            documents.append(f"{col}: {value}")
+            metadatas.append(
+                {
+                    "ticker": ticker,
+                    "column": col,
+                    "value": str(value),
+                    "row_index": int(row_idx),
+                }
+            )
+            clean_col = str(col).replace(" ", "_").replace("/", "_").replace("-", "_")
+            ids.append(f"{ticker}_{clean_col}_{row_idx}")
+
+    print(f"Total income statement documents to process: {len(documents)}")
+    try:
+        income_statement_collection.delete(where={"*": "*"})
+        print("Cleared existing records from financial_ratios collection.")
+    except Exception as exc:
+        print(f"Warning: failed to clear financial_ratios collection: {exc}")
+
+    for start in range(0, len(documents), batch_size):
+        end = start + batch_size
+        batch_documents = documents[start:end]
+        batch_metadatas = metadatas[start:end]
+        batch_ids = ids[start:end]
+
+        print(
+            f"Encoding income statement batch {start // batch_size + 1} "
+            f"with {len(batch_documents)} documents..."
+        )
+        embeddings = model.encode(batch_documents).tolist()
+        income_statement_collection.add(
+            ids=batch_ids,
+            documents=batch_documents,
+            embeddings=embeddings,
+            metadatas=batch_metadatas,
+        )
+
+    return len(documents)
+
+
+def ingest_ticker_info_documents(csv_path: Path = TICKER_INFO_CSV) -> int:
+    if not csv_path.exists():
+        print(f"Ticker info CSV not found at {csv_path}. Skipping ticker_info ingestion.")
+        return 0
+
+    df = pd.read_csv(csv_path)
+    required = ["Ticker", "Company", "Sector", "Industry"]
+    missing = [col for col in required if col not in df.columns]
+    if missing:
+        raise ValueError(f"Ticker info CSV missing required columns: {missing}")
+
+    documents: List[str] = []
+    metadatas: List[dict] = []
+    ids: List[str] = []
+
+    for _, row in df.iterrows():
+        ticker = str(row["Ticker"]).strip()
+        company = str(row["Company"]).strip()
+        sector = str(row["Sector"]).strip()
+        industry = str(row["Industry"]).strip()
+
+        documents.append(
+            f"{ticker} | Company: {company} | Sector: {sector} | Industry: {industry}"
+        )
+        metadatas.append(
+            {
+                "ticker": ticker,
+                "company": company,
+                "sector": sector,
+                "industry": industry,
+            }
+        )
+        ids.append(f"{ticker}_info")
+
+    print(f"Encoding {len(documents)} ticker info records...")
+    embeddings = model.encode(documents).tolist()
+    ticker_info_collection.add(
+        ids=ids,
+        documents=documents,
+        embeddings=embeddings,
+        metadatas=metadatas,
     )
-    print(f"Batch {i//BATCH_SIZE + 1} completed.\n")
 
-print(f"Successfully added {len(texts)} documents to the collection!")
-
-# Note: PersistentClient automatically persists data, no need for client.persist()
+    return len(documents)
 
 
-
-def query_vectors(query_text, top_k=5):
-
+def query_balance_sheet_vectors(query_text: str, top_k: int = 5):
     query_embedding = model.encode([query_text]).tolist()
+    return balance_sheet_collection.query(query_embeddings=query_embedding, n_results=top_k)
 
-    results = collection.query(
 
-        query_embeddings=query_embedding,
+def main() -> None:
+    balance_count = ingest_balance_sheet_documents()
+    print(f"Ingested {balance_count} documents into balance_sheet collection.")
 
-        n_results=top_k
-
+    income_statement_count = ingest_income_statement_documents()
+    print(
+        f"Ingested {income_statement_count} documents into financial_ratios collection."
     )
 
-    return results
+    ticker_count = ingest_ticker_info_documents()
+    if ticker_count:
+        print(f"Ingested {ticker_count} records into ticker_info.")
 
+    # Example exploration helper (disabled by default)
+    # query = "Total Assets"
+    # results = query_balance_sheet_vectors(query, top_k=5)
+    # print("Top results for query:", query)
+    # print("-" * 60)
+    # documents = results.get("documents", [[]])
+    # if not documents or not documents[0]:
+    #     print("No similar documents found.")
+    #     return
+    # metadatas = results.get("metadatas", [[]])
+    # ids = results.get("ids", [[]])
+    # distances = results.get("distances", [[]])
+    # for index, doc in enumerate(documents[0], start=1):
+    #     metadata = metadatas[0][index - 1] if metadatas and metadatas[0] else {}
+    #     doc_id = ids[0][index - 1] if ids and ids[0] else "N/A"
+    #     distance = distances[0][index - 1] if distances and distances[0] else None
+    #     print(f"\n{index}. ID: {doc_id}")
+    #     print(
+    #         f"   Hierarchy: {metadata.get('ticker', 'N/A')} >> "
+    #         f"{metadata.get('column', 'N/A')} >> {metadata.get('value', 'N/A')}"
+    #     )
+    #     print(f"   Document: {doc}")
+    #     if distance is not None:
+    #         print(f"   Similarity Distance: {distance:.4f}")
+    #     print("-" * 60)
 
 
 if __name__ == "__main__":
-
-    # Example usage: query similar financial entries
-
-    query = "Total Assets"
-
-    results = query_vectors(query, top_k=5)
-
-    print("Top results for query:", query)
-
-    print("-" * 60)
-
-    
-
-    # Results include 'ids', 'documents', 'metadatas', and 'distances'
-
-    # Each result follows the hierarchy: ticker >> column >> value
-
-    for i in range(len(results['documents'][0])):
-
-        doc_id = results['ids'][0][i]
-
-        doc = results['documents'][0][i]
-
-        metadata = results['metadatas'][0][i] if results.get('metadatas') and results['metadatas'][0] else {}
-
-        distance = results['distances'][0][i] if results.get('distances') and results['distances'][0] else None
-
-        
-
-        print(f"\n{i+1}. ID: {doc_id}")
-
-        print(f"   Hierarchy: {metadata.get('ticker', 'N/A')} >> {metadata.get('column', 'N/A')} >> {metadata.get('value', 'N/A')}")
-
-        print(f"   Document: {doc}")
-
-        if distance is not None:
-
-            print(f"   Similarity Distance: {distance:.4f}")
-
-        print("-" * 60)
-
+    main()

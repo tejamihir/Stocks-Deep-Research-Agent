@@ -84,6 +84,48 @@ def get_analyst_estimates_and_price_target(ticker: str) -> None:
             print(f"{key}: {value}")
 
 
+def get_top_news_fmp(ticker: str, api_key: str, count: int = 5) -> None:
+    if not api_key or api_key == "your_fmp_api_key":
+        print("FMP_API_KEY is missing. Set the environment variable to fetch news.")
+        return
+
+    url = f"https://financialmodelingprep.com/api/v3/stock_news?tickers={ticker}&limit={count}&apikey={api_key}"
+    try:
+        response = requests.get(url, timeout=10)
+    except requests.RequestException as exc:
+        print(f"Failed to fetch news: {exc}")
+        return
+
+    if response.status_code != 200:
+        if response.status_code == 403:
+            print("Failed to fetch news: 403 (Forbidden). Verify your FMP API key and subscription level.")
+        else:
+            print("Failed to fetch news:", response.status_code)
+        return
+
+    try:
+        news_items = response.json()
+    except ValueError:
+        print("Failed to parse news response.")
+        return
+
+    if not news_items:
+        print("No news articles available.")
+        return
+
+    # print(f"\nTop {min(count, len(news_items))} News Articles for {ticker}:")
+    # for i, article in enumerate(news_items[:count], start=1):
+    #     title = article.get("title", "Untitled")
+    #     published = article.get("publishedDate", "Unknown")
+    #     source = article.get("site", "Unknown")
+    #     summary = article.get("text", "No summary available.")
+    #     article_url = article.get("url", "No URL provided.")
+
+    #     print(f"{i}. {title}")
+    #     print(f"   Published: {published}")
+    #     print(f"   Source: {source}")
+    #     print(f"   Summary: {summary}")
+    #     print(f"   URL: {article_url}\n")
 
 
 def fetch_news_newsapi(

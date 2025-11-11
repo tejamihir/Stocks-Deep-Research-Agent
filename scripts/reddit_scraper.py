@@ -101,7 +101,10 @@ if not _df_defined:
     else:
         df = pd.DataFrame(columns=["title", "text"])  # empty fallback
 
-if not df.empty:
+if df.empty:
+    print("No posts available to extract tickers.")
+    result_df = pd.DataFrame(columns=["TICKER", "combined_text"])
+else:
     # Combine title and text
     df["title"] = df["title"].fillna("")
     df["text"] = df["text"].fillna("")
@@ -122,27 +125,28 @@ if not df.empty:
     tickers_out_path = repo_root / "data" / "reddit_output" / "filtered_reddit_ticker_posts.csv"
     result_df.to_csv(tickers_out_path, index=False)
     print(f"✅ Saved {len(result_df)} ticker-tagged rows to {tickers_out_path}")
-else:
-    print("No posts available to extract tickers.")
 
 
 
 # result_df should have a column 'combined_text' with the post text
 
 # Use CPU and truncate long inputs to model max length (512 tokens)
-sentiment_analyzer = pipeline(
-    'sentiment-analysis',
-    model="distilbert-base-uncased-finetuned-sst-2-english",
-    device=-1
-)
-texts = result_df['combined_text'].astype(str).tolist()
-sentiments = sentiment_analyzer(texts, truncation=True, max_length=512)
-result_df['sentiment'] = [s['label'].lower() for s in sentiments]
-sentiments_out_path = repo_root / "data" / "reddit_output" / "reddit_post_with_sentiment.csv"
+if result_df.empty:
+    print("No ticker-tagged posts to analyze for sentiment.")
+else:
+    sentiment_analyzer = pipeline(
+        'sentiment-analysis',
+        model="distilbert-base-uncased-finetuned-sst-2-english",
+        device=-1
+    )
+    texts = result_df['combined_text'].astype(str).tolist()
+    sentiments = sentiment_analyzer(texts, truncation=True, max_length=512)
+    result_df['sentiment'] = [s['label'].lower() for s in sentiments]
+    sentiments_out_path = repo_root / "data" / "reddit_output" / "reddit_post_with_sentiment.csv"
 
-# Saving or reviewing the result
-result_df.to_csv(sentiments_out_path, index=False)
-print(result_df.head())
+    # Saving or reviewing the result
+    result_df.to_csv(sentiments_out_path, index=False)
+    print(result_df.head())
 
 
 
