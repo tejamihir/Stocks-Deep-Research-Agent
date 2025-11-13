@@ -35,11 +35,11 @@ from scripts.create_vectors import (
 
 urllib3.disable_warnings(urllib3.exceptions.NotOpenSSLWarning)
 
-DIRECT_API_KEY = (
-    os.getenv("DIRECT_OPENAI_API_KEY")
-    or "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"
-)
-api_key = os.getenv("OPENAI_API_KEY") or DIRECT_API_KEY
+api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DIRECT_OPENAI_API_KEY")
+if not api_key:
+    raise RuntimeError(
+        "OPENAI_API_KEY environment variable is required. Set it before running this script."
+    )
 openai_client = openai.OpenAI(api_key=api_key)
 
 _collections: Optional[Dict[str, object]] = None

@@ -52,11 +52,11 @@ urllib3.disable_warnings(urllib3.exceptions.NotOpenSSLWarning)
 
 # Option 2: Set directly in code (not recommended for production, but useful for testing)
 # Uncomment the line below and set your API key:
-DIRECT_API_KEY = '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'  # Change to "your_api_key_here" if not using environment variable
-
-# Initialize OpenAI client (modern API v1.0+)
-
-api_key = os.getenv("OPENAI_API_KEY") or DIRECT_API_KEY
+api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DIRECT_OPENAI_API_KEY")
+if not api_key:
+    raise RuntimeError(
+        "OPENAI_API_KEY environment variable is required. Set it before running this script."
+    )
 
 openai_client = openai.OpenAI(api_key=api_key)
 
