@@ -1,30 +1,102 @@
+# NOTE: run these helpers to rebuild the Chromadb collections from the CSV snapshots.
 from pathlib import Path
-
-from typing import List
+from typing import Dict, List, Tuple
 
 import pandas as pd
 
-from chromadb import PersistentClient
+from chromadb import Client, PersistentClient
 from sentence_transformers import SentenceTransformer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
 BALANCE_SHEET_CSV = DATA_DIR / "yfinance_outputs" / "balance_sheet.csv"
 INCOME_STATEMENT_CSV = DATA_DIR / "yfinance_outputs" / "financials.csv"
+CASHFLOW_STATEMENT_CSV = DATA_DIR / "yfinance_outputs" / "cashflow.csv"
 TICKER_INFO_CSV = DATA_DIR / "yfinance_outputs" / "sp500_tickers_sectors.csv"
 CHROMA_PATH = DATA_DIR / "chroma_db"
 BATCH_SIZE = 5000
+MODEL_NAME = "all-MiniLM-L6-v2"
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
-client = PersistentClient(path=str(CHROMA_PATH))
 
-balance_sheet_collection = client.get_or_create_collection(name="balance_sheet")
-income_statement_collection = client.get_or_create_collection(name="financial_ratios")
-ticker_info_collection = client.get_or_create_collection(name="ticker_info")
+# ---------------------------------------------------------------------------
+# Low-level ingestion utilities
+# ---------------------------------------------------------------------------
+def _normalize_column(col: str) -> str:
+    return (
+        str(col)
+        .strip()
+        .replace(" ", "_")
+        .replace("/", "_")
+        .replace("-", "_")
+        .replace("\n", "_")
+    )
+
+
+def _ingest_numeric_table(
+    df: pd.DataFrame,
+    collection,
+    collection_name: str,
+    ticker_column: str,
+    model: SentenceTransformer,
+    batch_size: int,
+) -> int:
+    documents: List[str] = []
+    metadatas: List[dict] = []
+    ids: List[str] = []
+
+    for row_idx, row in df.iterrows():
+        ticker = str(row[ticker_column]).strip()
+        for col in df.columns:
+            if col == ticker_column:
+                continue
+            value = row[col]
+            if pd.isna(value):
+                continue
+
+            documents.append(f"{col}: {value}")
+            metadatas.append(
+                {
+                    "ticker": ticker,
+                    "column": col,
+                    "value": str(value),
+                    "row_index": int(row_idx),
+                }
+            )
+            ids.append(f"{ticker}_{_normalize_column(col)}_{row_idx}")
+
+    print(f"Total {collection_name} documents to process: {len(documents)}")
+    try:
+        collection.delete(where={"*": "*"})
+        print(f"Cleared existing records from {collection_name} collection.")
+    except Exception as exc:
+        print(f"Warning: failed to clear {collection_name} collection: {exc}")
+
+    for start in range(0, len(documents), batch_size):
+        end = start + batch_size
+        batch_documents = documents[start:end]
+        batch_metadatas = metadatas[start:end]
+        batch_ids = ids[start:end]
+
+        print(
+            f"Encoding {collection_name} batch {start // batch_size + 1} "
+            f"with {len(batch_documents)} documents..."
+        )
+        embeddings = model.encode(batch_documents).tolist()
+        collection.add(
+            ids=batch_ids,
+            documents=batch_documents,
+            embeddings=embeddings,
+            metadatas=batch_metadatas,
+        )
+
+    return len(documents)
 
 
 def ingest_balance_sheet_documents(
-    csv_path: Path = BALANCE_SHEET_CSV, batch_size: int = BATCH_SIZE
+    collections: Dict[str, object],
+    model: SentenceTransformer,
+    csv_path: Path = BALANCE_SHEET_CSV,
+    batch_size: int = BATCH_SIZE,
 ) -> int:
     if not csv_path.exists():
         raise FileNotFoundError(f"Balance sheet CSV not found at {csv_path}")
@@ -36,60 +108,21 @@ def ingest_balance_sheet_documents(
             "No ticker column found. Ensure the balance sheet CSV has a 'ticker' column."
         )
 
-    documents: List[str] = []
-    metadatas: List[dict] = []
-    ids: List[str] = []
-
-    for row_idx, row in df.iterrows():
-        ticker = str(row[ticker_col]).strip()
-        for col in df.columns:
-            if col == ticker_col:
-                continue
-            value = row[col]
-            if pd.isna(value):
-                continue
-
-            documents.append(f"{col}: {value}")
-            metadatas.append(
-                {
-                    "ticker": ticker,
-                    "column": col,
-                    "value": str(value),
-                    "row_index": int(row_idx),
-                }
-            )
-            clean_col = str(col).replace(" ", "_").replace("/", "_").replace("-", "_")
-            ids.append(f"{ticker}_{clean_col}_{row_idx}")
-
-    print(f"Total balance sheet documents to process: {len(documents)}")
-    try:
-        balance_sheet_collection.delete(where={"*": "*"})
-        print("Cleared existing records from balance_sheet collection.")
-    except Exception as exc:
-        print(f"Warning: failed to clear balance_sheet collection: {exc}")
-
-    for start in range(0, len(documents), batch_size):
-        end = start + batch_size
-        batch_documents = documents[start:end]
-        batch_metadatas = metadatas[start:end]
-        batch_ids = ids[start:end]
-
-        print(
-            f"Encoding balance sheet batch {start // batch_size + 1} with {len(batch_documents)} documents..."
-        )
-        embeddings = model.encode(batch_documents).tolist()
-        balance_sheet_collection.add(
-            ids=batch_ids,
-            documents=batch_documents,
-            embeddings=embeddings,
-            metadatas=batch_metadatas,
-        )
-
-    return len(documents)
+    return _ingest_numeric_table(
+        df,
+        collection=collections["balance_sheet"],
+        collection_name="balance_sheet",
+        ticker_column=ticker_col,
+        model=model,
+        batch_size=batch_size,
+    )
 
 
 def ingest_income_statement_documents(
-    csv_path: Path = INCOME_STATEMENT_CSV, batch_size: int = BATCH_SIZE
+    collections: Dict[str, object],
+    model: SentenceTransformer,
+    csv_path: Path = INCOME_STATEMENT_CSV,
+    batch_size: int = BATCH_SIZE,
 ) -> int:
     if not csv_path.exists():
         raise FileNotFoundError(f"Income statement CSV not found at {csv_path}")
@@ -101,60 +134,47 @@ def ingest_income_statement_documents(
             "No ticker column found. Ensure the income statement CSV has a 'ticker' column."
         )
 
-    documents: List[str] = []
-    metadatas: List[dict] = []
-    ids: List[str] = []
+    return _ingest_numeric_table(
+        df,
+        collection=collections["financial_ratios"],
+        collection_name="financial_ratios",
+        ticker_column=ticker_col,
+        model=model,
+        batch_size=batch_size,
+    )
 
-    for row_idx, row in df.iterrows():
-        ticker = str(row[ticker_col]).strip()
-        for col in df.columns:
-            if col == ticker_col:
-                continue
-            value = row[col]
-            if pd.isna(value):
-                continue
 
-            documents.append(f"{col}: {value}")
-            metadatas.append(
-                {
-                    "ticker": ticker,
-                    "column": col,
-                    "value": str(value),
-                    "row_index": int(row_idx),
-                }
-            )
-            clean_col = str(col).replace(" ", "_").replace("/", "_").replace("-", "_")
-            ids.append(f"{ticker}_{clean_col}_{row_idx}")
+def ingest_cashflow_documents(
+    collections: Dict[str, object],
+    model: SentenceTransformer,
+    csv_path: Path = CASHFLOW_STATEMENT_CSV,
+    batch_size: int = BATCH_SIZE,
+) -> int:
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Cashflow statement CSV not found at {csv_path}")
 
-    print(f"Total income statement documents to process: {len(documents)}")
-    try:
-        income_statement_collection.delete(where={"*": "*"})
-        print("Cleared existing records from financial_ratios collection.")
-    except Exception as exc:
-        print(f"Warning: failed to clear financial_ratios collection: {exc}")
-
-    for start in range(0, len(documents), batch_size):
-        end = start + batch_size
-        batch_documents = documents[start:end]
-        batch_metadatas = metadatas[start:end]
-        batch_ids = ids[start:end]
-
-        print(
-            f"Encoding income statement batch {start // batch_size + 1} "
-            f"with {len(batch_documents)} documents..."
-        )
-        embeddings = model.encode(batch_documents).tolist()
-        income_statement_collection.add(
-            ids=batch_ids,
-            documents=batch_documents,
-            embeddings=embeddings,
-            metadatas=batch_metadatas,
+    df = pd.read_csv(csv_path)
+    ticker_col = next((c for c in df.columns if c.lower() == "ticker"), None)
+    if ticker_col is None:
+        raise ValueError(
+            "No ticker column found. Ensure the cashflow statement CSV has a 'ticker' column."
         )
 
-    return len(documents)
+    return _ingest_numeric_table(
+        df,
+        collection=collections["cashflow_statement"],
+        collection_name="cashflow_statement",
+        ticker_column=ticker_col,
+        model=model,
+        batch_size=batch_size,
+    )
 
 
-def ingest_ticker_info_documents(csv_path: Path = TICKER_INFO_CSV) -> int:
+def ingest_ticker_info_documents(
+    collections: Dict[str, object],
+    model: SentenceTransformer,
+    csv_path: Path = TICKER_INFO_CSV,
+) -> int:
     if not csv_path.exists():
         print(f"Ticker info CSV not found at {csv_path}. Skipping ticker_info ingestion.")
         return 0
@@ -190,7 +210,7 @@ def ingest_ticker_info_documents(csv_path: Path = TICKER_INFO_CSV) -> int:
 
     print(f"Encoding {len(documents)} ticker info records...")
     embeddings = model.encode(documents).tolist()
-    ticker_info_collection.add(
+    collections["ticker_info"].add(
         ids=ids,
         documents=documents,
         embeddings=embeddings,
@@ -200,50 +220,37 @@ def ingest_ticker_info_documents(csv_path: Path = TICKER_INFO_CSV) -> int:
     return len(documents)
 
 
-def query_balance_sheet_vectors(query_text: str, top_k: int = 5):
-    query_embedding = model.encode([query_text]).tolist()
-    return balance_sheet_collection.query(query_embeddings=query_embedding, n_results=top_k)
+# ---------------------------------------------------------------------------
+# Orchestrator helpers
+# ---------------------------------------------------------------------------
+def build_chroma_collections(
+    client: Client,
+    model: SentenceTransformer,
+    batch_size: int = BATCH_SIZE,
+    balance_sheet_csv: Path = BALANCE_SHEET_CSV,
+    income_statement_csv: Path = INCOME_STATEMENT_CSV,
+    cashflow_csv: Path = CASHFLOW_STATEMENT_CSV,
+    ticker_info_csv: Path = TICKER_INFO_CSV,
+) -> Dict[str, object]:
+    collections = {
+        "balance_sheet": client.get_or_create_collection("balance_sheet"),
+        "financial_ratios": client.get_or_create_collection("financial_ratios"),
+        "cashflow_statement": client.get_or_create_collection("cashflow_statement"),
+        "ticker_info": client.get_or_create_collection("ticker_info"),
+    }
+
+    ingest_balance_sheet_documents(collections, model, balance_sheet_csv, batch_size)
+    ingest_income_statement_documents(collections, model, income_statement_csv, batch_size)
+    ingest_cashflow_documents(collections, model, cashflow_csv, batch_size)
+    ingest_ticker_info_documents(collections, model, ticker_info_csv)
+
+    return collections
 
 
-def main() -> None:
-    balance_count = ingest_balance_sheet_documents()
-    print(f"Ingested {balance_count} documents into balance_sheet collection.")
-
-    income_statement_count = ingest_income_statement_documents()
-    print(
-        f"Ingested {income_statement_count} documents into financial_ratios collection."
-    )
-
-    ticker_count = ingest_ticker_info_documents()
-    if ticker_count:
-        print(f"Ingested {ticker_count} records into ticker_info.")
-
-    # Example exploration helper (disabled by default)
-    # query = "Total Assets"
-    # results = query_balance_sheet_vectors(query, top_k=5)
-    # print("Top results for query:", query)
-    # print("-" * 60)
-    # documents = results.get("documents", [[]])
-    # if not documents or not documents[0]:
-    #     print("No similar documents found.")
-    #     return
-    # metadatas = results.get("metadatas", [[]])
-    # ids = results.get("ids", [[]])
-    # distances = results.get("distances", [[]])
-    # for index, doc in enumerate(documents[0], start=1):
-    #     metadata = metadatas[0][index - 1] if metadatas and metadatas[0] else {}
-    #     doc_id = ids[0][index - 1] if ids and ids[0] else "N/A"
-    #     distance = distances[0][index - 1] if distances and distances[0] else None
-    #     print(f"\n{index}. ID: {doc_id}")
-    #     print(
-    #         f"   Hierarchy: {metadata.get('ticker', 'N/A')} >> "
-    #         f"{metadata.get('column', 'N/A')} >> {metadata.get('value', 'N/A')}"
-    #     )
-    #     print(f"   Document: {doc}")
-    #     if distance is not None:
-    #         print(f"   Similarity Distance: {distance:.4f}")
-    #     print("-" * 60)
-
-
-if __name__ == "__main__":
-    main()
+def build_persistent_chroma(
+    batch_size: int = BATCH_SIZE,
+) -> Tuple[Client, Dict[str, object], SentenceTransformer]:
+    client = PersistentClient(path=str(CHROMA_PATH))
+    model = SentenceTransformer(MODEL_NAME)
+    collections = build_chroma_collections(client, model, batch_size=batch_size)
+    return client, collections, model

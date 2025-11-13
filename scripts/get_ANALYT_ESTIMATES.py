@@ -240,8 +240,8 @@ def summarize_news_with_openai(ticker: str, articles: List[dict], model: Optiona
         return
 
     summary_text = response.choices[0].message.content.strip()
-    print("\nLLM 5-Point Summary:")
-    print(summary_text)
+    # print("\nLLM 5-Point Summary:")
+    # print(summary_text)
 
 
 def summarize_industry_outlook_with_openai(industry: str, articles: List[dict], model: Optional[str] = None) -> None:
