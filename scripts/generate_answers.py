@@ -387,7 +387,7 @@ def retrieve_across_collections(query, top_k=3, where={}):
                 )
                 added_metric_entries.add(identifier)
 
-   # print("All Contexts:", all_contexts, "\n")
+    #print(f"All Contexts: {all_contexts}")
     return all_contexts
 
 
@@ -404,9 +404,9 @@ def generate_with_openai(prompt):
                     """You are a senior equity analyst. Given the context payload, break it into clearly labeled sections—"
                     1.Financial Health: Your job here is to analyze the financial data and provide a concise summary of the financial health of the company. Metrics that you will comment on are:
                     Price to Earnings Ratio (PE Ratio), Current Ratio, Book Value, Debt to Equity Ratio, Price per Book Value (PBV- you need to calclate this from the book value and the current price), Net Income, Earnings per Share (EPS), Leverage Ratio (Assers by Equity), Cash Conversion Ratio (Operating Cash Flow / Net Income),Free Cash Flow to Revenue Ratio (Free Cash Flow / Sales), other relevant metrics. Decompose each metrics into its components and comment on each component.
-                    2. News Analysis of the company: Your job here is to analyze the news and provide a concise summary of the news and its impact on the company.
-                     3. Analyst Commentary: Just give a brief summary of the analyst commentary and the price target.
-                      4. Industry coverage (keep the LLM 5 point summary as it is) etc."
+                    2. News Analysis of the company: Your job here is to analyze the news and provide a concise summary of the news and its impact on the company. Maintain numbers and percenages in the news
+                     3. Analyst Commentary: Just give a brief summary of the analyst commentary and the price target. Mention number and percentage of votes
+                      4. Industry coverage (keep the LLM 5 point summary as it is, dont mention the LLM in the output) etc."
                     " For each section, synthesize a concise assessment and then produce a comprehensive, integrated analysis that"
                     " covers financial health, recent developments, balance-sheet strength, risks, and catalysts. Do not repeat the raw"
                     " context verbatim; instead, interpret it. Maintain a crisp, professional tone throughout."""
@@ -414,7 +414,7 @@ def generate_with_openai(prompt):
             },
             {"role": "user", "content": prompt},
         ],
-        max_tokens=1000,
+        max_tokens=16384,
         temperature=0.0,
     )
 
@@ -563,30 +563,23 @@ def rag_answer(query):
     newsapi_sections = []
     classification_lines = []
     
-    print(f"DEBUG: Extracted tickers: {tickers}")
-    
     if tickers:
         for ticker in tickers:
-            print(f"DEBUG: Processing ticker {ticker}")
             news_output = get_yahoo_news_section(ticker)
-            print(f"DEBUG: Yahoo news output for {ticker}: {len(news_output) if news_output else 0} chars")
             if news_output:
                 news_sections.append(news_output)
             analyst_output = get_analyst_estimates_section(ticker)
             if analyst_output:
                 analyst_sections.append(f"Analyst Estimates for {ticker}:\n{analyst_output}")
             classification = get_ticker_classification(ticker)
-            print(f"DEBUG: Classification for {ticker}: {classification}")
             if classification:
                 sector = classification.get("sector")
                 industry = classification.get("industry")
-                print(f"DEBUG: Industry for {ticker}: {industry}")
                 # Sector summary intentionally disabled; keeping industry coverage only.
                 if industry:
                     industry_news = get_newsapi_section(
                         query=industry+" in the next 10 years", summarize=False, summarize_outlook=True
                     )
-                    print(f"DEBUG: NewsAPI output for {ticker} industry {industry}: {len(industry_news) if industry_news else 0} chars")
                     if industry_news:
                         newsapi_sections.append(
                             f"NewsAPI Industry Coverage for {ticker} ({industry}):\n{industry_news}"
@@ -597,8 +590,6 @@ def rag_answer(query):
                     f"Industry - {industry or 'Unknown'} "
                     f"| Company - {classification.get('company', 'Unknown')}"
                 )
-    else:
-        print("DEBUG: No tickers extracted from query")
 
     contexts = retrieve_across_collections(query, top_k=3, where=where)
     combined_context = "\n".join(contexts)
@@ -622,10 +613,6 @@ def rag_answer(query):
         extra_sections_texts.append("NewsAPI Headlines:\n" + "\n\n".join(newsapi_sections))
     if classification_lines:
         extra_sections_texts.append("Ticker Classification:\n" + "\n".join(classification_lines))
-    #print("Extra Sections Texts:", extra_sections_texts, "\n")
-    print("News Sections:", news_sections, "\n")
-    print("Industry Coverage Sections:", newsapi_sections, "\n")
-
     prompt_context_parts = []
     if full_context.strip():
         prompt_context_parts.append(full_context.strip())
@@ -633,11 +620,8 @@ def rag_answer(query):
     prompt_context = "\n\n".join(prompt_context_parts)
 
     prompt = f"Context:\n{prompt_context}\n\nQuestion: {query}\n\nAnswer:"
-    print("Prompt:", prompt, "\n")
+    print(f"Prompt: {prompt}")
     generated_text = generate_with_openai(prompt)
-
-    for section_text in extra_sections_texts:
-        generated_text += "\n\n" + section_text
 
     return generated_text
 
@@ -680,7 +664,7 @@ def extract_metadata_with_llm(user_query: str):
     try:
         parsed = json.loads(raw_output)
     except json.JSONDecodeError:
-        print("⚠️ LLM returned invalid JSON, defaulting to empty fields.")
+       # print("⚠️ LLM returned invalid JSON, defaulting to empty fields.")
         parsed = {"tickers": [], "metrics": [], "years": []}
 
     return parsed
@@ -727,12 +711,7 @@ def build_metadata_filter(parsed):
         return {}
 
 if __name__ == "__main__":
-
     user_query = input("Enter your query: ")
-
-    print(f"\nUser Query: {user_query}")
-
     rag_response = rag_answer(user_query)
-
     print(rag_response)
 

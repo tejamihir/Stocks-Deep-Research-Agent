@@ -167,8 +167,6 @@ def fetch_news_newsapi(
     if not articles:
         print("No NewsAPI articles available.")
         return
-    
-    print(f"DEBUG: Found {len(articles)} NewsAPI articles for query '{query}'")
 
     #print(f"\nTop {min(page_size, len(articles))} NewsAPI Articles for query '{query}':")
     summarizable_articles: List[dict] = []
@@ -242,16 +240,13 @@ def summarize_news_with_openai(ticker: str, articles: List[dict], model: Optiona
         return
 
     summary_text = response.choices[0].message.content.strip()
-    #print("\nLLM 5-Point Summary:")
-   # print(summary_text)
+    print("\nLLM 5-Point Summary:")
+    print(summary_text)
 
 
 def summarize_industry_outlook_with_openai(industry: str, articles: List[dict], model: Optional[str] = None) -> None:
     if not articles:
-        print(f"DEBUG: No articles provided for industry outlook summarization for {industry}")
         return
-    
-    print(f"DEBUG: Summarizing industry outlook for {industry} with {len(articles)} articles")
 
     try:
         client = get_openai_client()
@@ -342,11 +337,10 @@ def get_top_news_yahoo(ticker: str, count: int = 5, summarize: bool = True) -> N
 
 
 if __name__ == "__main__":
-    ticker = "NVDA"
+    ticker = "GOOG"
     fmp_api_key = os.getenv("FMP_API_KEY", "your_fmp_api_key")
 
     get_analyst_estimates_and_price_target(ticker)
-    get_top_news_fmp(ticker, fmp_api_key)
     get_top_news_yahoo(ticker)
     fetch_news_newsapi(query="Uranium Industry in the next 10 years", summarize_outlook=True)
 
