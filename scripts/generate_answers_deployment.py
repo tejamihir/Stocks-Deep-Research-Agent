@@ -461,10 +461,17 @@ def get_stock_price(ticker):
 
 def get_yahoo_news_section(ticker: str) -> str:
     buffer = io.StringIO()
-    with redirect_stdout(buffer):
-        get_top_news_yahoo(ticker, summarize=True)
-    output = buffer.getvalue().strip()
-    buffer.close()
+    try:
+        with redirect_stdout(buffer):
+            get_top_news_yahoo(ticker, summarize=True)
+        output = buffer.getvalue().strip()
+    except Exception as exc:
+        output = f"Error fetching Yahoo Finance news for {ticker}: {exc}"
+    finally:
+        buffer.close()
+
+    if not output:
+        return f"Yahoo Finance news for {ticker} is currently unavailable."
     return output
 
 

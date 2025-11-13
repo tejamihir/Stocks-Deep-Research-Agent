@@ -52,11 +52,10 @@ urllib3.disable_warnings(urllib3.exceptions.NotOpenSSLWarning)
 
 # Option 2: Set directly in code (not recommended for production, but useful for testing)
 # Uncomment the line below and set your API key:
-api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DIRECT_OPENAI_API_KEY")
-if not api_key:
-    raise RuntimeError(
-        "OPENAI_API_KEY environment variable is required. Set it before running this script."
-    )
+
+# Initialize OpenAI client (modern API v1.0+)
+
+api_key =  os.getenv("OPENAI_API_KEY") or os.getenv("DIRECT_OPENAI_API_KEY")
 
 openai_client = openai.OpenAI(api_key=api_key)
 
@@ -475,10 +474,18 @@ def get_stock_price(ticker):
 
 def get_yahoo_news_section(ticker: str) -> str:
     buffer = io.StringIO()
-    with redirect_stdout(buffer):
-        get_top_news_yahoo(ticker, summarize=True)
-    output = buffer.getvalue().strip()
-    buffer.close()
+    try:
+        with redirect_stdout(buffer):
+            get_top_news_yahoo(ticker, summarize=True)
+        output = buffer.getvalue().strip()
+    except Exception as exc:
+        output = f"Error fetching Yahoo Finance news for {ticker}: {exc}"
+    finally:
+        buffer.close()
+    
+    # If no output was captured, provide a fallback message
+    if not output:
+        return f"Yahoo Finance news for {ticker} is currently unavailable."
     return output
 
 
@@ -566,6 +573,7 @@ def rag_answer(query):
     if tickers:
         for ticker in tickers:
             news_output = get_yahoo_news_section(ticker)
+            # print(f"DEBUG Yahoo news for {ticker}: {news_output}")
             if news_output:
                 news_sections.append(news_output)
             analyst_output = get_analyst_estimates_section(ticker)
@@ -618,9 +626,9 @@ def rag_answer(query):
         prompt_context_parts.append(full_context.strip())
     prompt_context_parts.extend(extra_sections_texts)
     prompt_context = "\n\n".join(prompt_context_parts)
-
+    
     prompt = f"Context:\n{prompt_context}\n\nQuestion: {query}\n\nAnswer:"
-    print(f"Prompt: {prompt}")
+    #print(f"Prompt: {prompt}")
     generated_text = generate_with_openai(prompt)
 
     return generated_text

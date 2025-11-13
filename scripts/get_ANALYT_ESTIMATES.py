@@ -333,7 +333,17 @@ def get_top_news_yahoo(ticker: str, count: int = 5, summarize: bool = True) -> N
         )
 
     if summarize:
-        summarize_news_with_openai(ticker, articles)
+        try:
+            summarize_news_with_openai(ticker, articles)
+        except Exception as exc:
+            print(f"Failed to summarize news: {exc}")
+            # Fallback: print raw articles if summarization fails
+            print(f"\nTop {len(articles)} Yahoo Finance News Articles for {ticker}:")
+            for i, article in enumerate(articles, start=1):
+                print(f"{i}. {article.get('title', 'Untitled')}")
+                if article.get('published'):
+                    print(f"   Published: {article['published']}")
+                print(f"   Link: {article.get('link', 'No link available.')}\n")
 
 
 if __name__ == "__main__":
