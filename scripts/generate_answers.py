@@ -87,18 +87,6 @@ except Exception:
 
 embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-_balance_sheet_df: Optional[pd.DataFrame] = None
-
-
-def load_balance_sheet_dataframe() -> pd.DataFrame:
-    global _balance_sheet_df
-    if _balance_sheet_df is None:
-        if BALANCE_SHEET_CSV.exists():
-            _balance_sheet_df = pd.read_csv(BALANCE_SHEET_CSV)
-        else:
-            _balance_sheet_df = pd.DataFrame()
-    return _balance_sheet_df
-
 
 def get_balance_sheet_metrics(ticker: str, metrics: set[str]) -> dict[str, Optional[str]]:
     collection = collections.get("balance_sheet")
@@ -136,12 +124,15 @@ def get_balance_sheet_metrics(ticker: str, metrics: set[str]) -> dict[str, Optio
             if original_metric and row.get("value") is not None:
                 values[original_metric] = str(row["value"])
 
-    print(f"DEBUG balance_sheet columns for {ticker}: {debug_columns}")
+    #print(f"DEBUG balance_sheet columns for {ticker}: {debug_columns}")
 
     # Compute any missing metrics directly from the raw CSV
     missing_metrics = {metric for metric, value in values.items() if value is None}
     if missing_metrics:
-        df = load_balance_sheet_dataframe()
+        if BALANCE_SHEET_CSV.exists():
+            df = pd.read_csv(BALANCE_SHEET_CSV)
+        else:
+            df = pd.DataFrame()
         if not df.empty:
             ticker_rows = df[df["ticker"].astype(str).str.upper() == ticker.upper()]
             if not ticker_rows.empty:
@@ -186,6 +177,42 @@ def get_balance_sheet_metrics(ticker: str, metrics: set[str]) -> dict[str, Optio
     return values
 
 
+def _fetch_metric_from_collection(ticker: str, collection_name: str, metric_name: str) -> Optional[str]:
+    """Fetch a specific metric value from a collection for a given ticker."""
+    collection = collections.get(collection_name)
+    if collection is None:
+        return None
+    
+    try:
+        result = collection.get(where={"ticker": ticker.upper()}, include=["metadatas"])
+    except Exception:
+        return None
+    
+    metadatas = result.get("metadatas") or []
+    rows = []
+    for entry in metadatas:
+        if isinstance(entry, list):
+            rows.extend(entry)
+        elif isinstance(entry, dict):
+            rows.append(entry)
+    
+    # Normalize metric name for comparison
+    normalized_target = metric_name.replace(" ", "_").strip().lower()
+    
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        column = row.get("column")
+        if isinstance(column, str):
+            normalized_column = column.replace(" ", "_").strip().lower()
+            if normalized_column == normalized_target:
+                value = row.get("value")
+                if value is not None:
+                    return str(value)
+    
+    return None
+
+
 def _extract_tickers_from_where(where_clause) -> set[str]:
     tickers: set[str] = set()
     if isinstance(where_clause, dict):
@@ -213,7 +240,7 @@ def retrieve_across_collections(query, top_k=3, where={}):
     query_emb = embed_model.encode([query]).tolist()
 
     all_contexts = []
-    print(where)
+    #print(where)
 
     balance_metrics = {"current_ratio", "book_value", "debt_to_equity_ratio"}
     encountered_tickers: set[str] = set()
@@ -257,8 +284,11 @@ def retrieve_across_collections(query, top_k=3, where={}):
 
             column_key = column.replace(" ", "_").strip().lower() if column else ""
 
-            if name == "balance_sheet" and ticker:
+            # Track all encountered tickers from any collection
+            if ticker:
                 encountered_tickers.add(ticker)
+
+            if name == "balance_sheet" and ticker:
                 if column_key in balance_metrics:
                     all_contexts.append(
                         f"[{name}] Ticker: {ticker} | {column_key}: {value}"
@@ -271,7 +301,6 @@ def retrieve_across_collections(query, top_k=3, where={}):
                 all_contexts.append(f"[{name}] {doc}")
 
     # Ensure key balance-sheet metrics are present even if not retrieved
-    metrics_summary: list[str] = []
     for ticker in encountered_tickers:
         metric_values = get_balance_sheet_metrics(ticker, balance_metrics)
         for metric, metric_value in metric_values.items():
@@ -281,12 +310,85 @@ def retrieve_across_collections(query, top_k=3, where={}):
                     f"[balance_sheet] Ticker: {ticker} | {metric}: {metric_value}"
                 )
                 added_metric_entries.add(identifier)
-                metrics_summary.append(
-                    f"{ticker} {metric.replace('_', ' ').title()}: {metric_value}"
+        
+        # Always fetch Net Income from income_statement (financial_ratios) collection
+        net_income = _fetch_metric_from_collection(ticker, "financial_ratios", "Net Income")
+        if net_income is not None:
+            identifier = (ticker, "net_income")
+            if identifier not in added_metric_entries:
+                all_contexts.append(
+                    f"[financial_ratios] Ticker: {ticker} | net_income: {net_income}"
                 )
+                added_metric_entries.add(identifier)
+        
+        # Always fetch Revenue from income_statement (financial_ratios) collection
+        revenue = _fetch_metric_from_collection(ticker, "financial_ratios", "Total Revenue")
+        if revenue is None:
+            # Try alternative column names
+            revenue = _fetch_metric_from_collection(ticker, "financial_ratios", "Revenue")
+        if revenue is None:
+            revenue = _fetch_metric_from_collection(ticker, "financial_ratios", "Operating Revenue")
+        if revenue is not None:
+            identifier = (ticker, "revenue")
+            if identifier not in added_metric_entries:
+                all_contexts.append(
+                    f"[financial_ratios] Ticker: {ticker} | revenue: {revenue}"
+                )
+                added_metric_entries.add(identifier)
+        
+        # Always fetch Total Assets from balance_sheet collection
+        total_assets = _fetch_metric_from_collection(ticker, "balance_sheet", "Total Assets")
+        if total_assets is not None:
+            identifier = (ticker, "total_assets")
+            if identifier not in added_metric_entries:
+                all_contexts.append(
+                    f"[balance_sheet] Ticker: {ticker} | total_assets: {total_assets}"
+                )
+                added_metric_entries.add(identifier)
+        
+        # Always fetch Total Liabilities from balance_sheet collection
+        total_liabilities = _fetch_metric_from_collection(ticker, "balance_sheet", "Total Liabilities Net Minority Interest")
+        if total_liabilities is None:
+            # Try alternative column name
+            total_liabilities = _fetch_metric_from_collection(ticker, "balance_sheet", "Total Liabilities")
+        if total_liabilities is not None:
+            identifier = (ticker, "total_liabilities")
+            if identifier not in added_metric_entries:
+                all_contexts.append(
+                    f"[balance_sheet] Ticker: {ticker} | total_liabilities: {total_liabilities}"
+                )
+                added_metric_entries.add(identifier)
+        
+        # Always fetch Operating Cash Flow from cashflow_statement collection
+        operating_cash_flow = _fetch_metric_from_collection(ticker, "cashflow_statement", "Operating Cash Flow")
+        if operating_cash_flow is None:
+            # Try alternative column names
+            operating_cash_flow = _fetch_metric_from_collection(ticker, "cashflow_statement", "Cash From Operating Activities")
+        if operating_cash_flow is None:
+            operating_cash_flow = _fetch_metric_from_collection(ticker, "cashflow_statement", "Net Cash From Operating Activities")
+        if operating_cash_flow is not None:
+            identifier = (ticker, "operating_cash_flow")
+            if identifier not in added_metric_entries:
+                all_contexts.append(
+                    f"[cashflow_statement] Ticker: {ticker} | operating_cash_flow: {operating_cash_flow}"
+                )
+                added_metric_entries.add(identifier)
+        
+        # Always fetch Free Cash Flow from cashflow_statement collection
+        free_cash_flow = _fetch_metric_from_collection(ticker, "cashflow_statement", "Free Cash Flow")
+        if free_cash_flow is None:
+            # Try alternative column names
+            free_cash_flow = _fetch_metric_from_collection(ticker, "cashflow_statement", "Free Cash Flow Per Share")
+        if free_cash_flow is not None:
+            identifier = (ticker, "free_cash_flow")
+            if identifier not in added_metric_entries:
+                all_contexts.append(
+                    f"[cashflow_statement] Ticker: {ticker} | free_cash_flow: {free_cash_flow}"
+                )
+                added_metric_entries.add(identifier)
 
-    print("All Contexts:", all_contexts, "\n")
-    return all_contexts, metrics_summary
+   # print("All Contexts:", all_contexts, "\n")
+    return all_contexts
 
 
 
@@ -295,13 +397,25 @@ def generate_with_openai(prompt):
 
     response = openai_client.chat.completions.create(
         model="gpt-4o",
-
-        messages=[{"role": "user", "content": prompt}],
-
-        max_tokens=300,
-
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    """You are a senior equity analyst. Given the context payload, break it into clearly labeled sections—"
+                    1.Financial Health: Your job here is to analyze the financial data and provide a concise summary of the financial health of the company. Metrics that you will comment on are:
+                    Price to Earnings Ratio (PE Ratio), Current Ratio, Book Value, Debt to Equity Ratio, Price per Book Value (PBV- you need to calclate this from the book value and the current price), Net Income, Earnings per Share (EPS), Leverage Ratio (Assers by Equity), Cash Conversion Ratio (Operating Cash Flow / Net Income),Free Cash Flow to Revenue Ratio (Free Cash Flow / Sales), other relevant metrics. Decompose each metrics into its components and comment on each component.
+                    2. News Analysis of the company: Your job here is to analyze the news and provide a concise summary of the news and its impact on the company.
+                     3. Analyst Commentary: Just give a brief summary of the analyst commentary and the price target.
+                      4. Industry coverage (keep the LLM 5 point summary as it is) etc."
+                    " For each section, synthesize a concise assessment and then produce a comprehensive, integrated analysis that"
+                    " covers financial health, recent developments, balance-sheet strength, risks, and catalysts. Do not repeat the raw"
+                    " context verbatim; instead, interpret it. Maintain a crisp, professional tone throughout."""
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=1000,
         temperature=0.0,
-
     )
 
     return response.choices[0].message.content
@@ -443,28 +557,36 @@ def rag_answer(query):
             price_info = get_stock_price(ticker)
             price_info_list.append(price_info)
         price_context = "\n\nReal-time Stock Prices:\n" + "\n\n".join(price_info_list) + "\n"
-    #print("Price Conext:",price_context,"\n")
+
     news_sections = []
     analyst_sections = []
     newsapi_sections = []
     classification_lines = []
+    
+    print(f"DEBUG: Extracted tickers: {tickers}")
+    
     if tickers:
         for ticker in tickers:
+            print(f"DEBUG: Processing ticker {ticker}")
             news_output = get_yahoo_news_section(ticker)
+            print(f"DEBUG: Yahoo news output for {ticker}: {len(news_output) if news_output else 0} chars")
             if news_output:
                 news_sections.append(news_output)
             analyst_output = get_analyst_estimates_section(ticker)
             if analyst_output:
                 analyst_sections.append(f"Analyst Estimates for {ticker}:\n{analyst_output}")
             classification = get_ticker_classification(ticker)
+            print(f"DEBUG: Classification for {ticker}: {classification}")
             if classification:
                 sector = classification.get("sector")
                 industry = classification.get("industry")
+                print(f"DEBUG: Industry for {ticker}: {industry}")
                 # Sector summary intentionally disabled; keeping industry coverage only.
                 if industry:
                     industry_news = get_newsapi_section(
                         query=industry+" in the next 10 years", summarize=False, summarize_outlook=True
                     )
+                    print(f"DEBUG: NewsAPI output for {ticker} industry {industry}: {len(industry_news) if industry_news else 0} chars")
                     if industry_news:
                         newsapi_sections.append(
                             f"NewsAPI Industry Coverage for {ticker} ({industry}):\n{industry_news}"
@@ -475,36 +597,47 @@ def rag_answer(query):
                     f"Industry - {industry or 'Unknown'} "
                     f"| Company - {classification.get('company', 'Unknown')}"
                 )
+    else:
+        print("DEBUG: No tickers extracted from query")
 
-    contexts, metrics_summary = retrieve_across_collections(query, top_k=3, where=where)
+    contexts = retrieve_across_collections(query, top_k=3, where=where)
     combined_context = "\n".join(contexts)
-    print("Combined Context:", combined_context, "\n")
-
-    metrics_block = ""
-    if metrics_summary:
-        metrics_block = "Balance Sheet Metrics:\n" + "\n".join(metrics_summary)
+    # print("Combined Context:", combined_context, "\n")
 
     context_parts = []
     if price_context.strip():
         context_parts.append(price_context.strip())
     if combined_context.strip():
         context_parts.append(combined_context.strip())
-    if metrics_block:
-        context_parts.append(metrics_block)
 
     full_context = "\n\n".join(context_parts)
-    print("Full Context:", full_context, "\n")
-    prompt = f"Context:\n{full_context}\n\nQuestion: {query}\n\nAnswer:"
+   # print("Full Context:", full_context, "\n")
+
+    extra_sections_texts: list[str] = []
+    if news_sections:
+        extra_sections_texts.append("Yahoo Finance News:\n" + "\n\n".join(news_sections))
+    if analyst_sections:
+        extra_sections_texts.append("Analyst Targets & Recommendations:\n" + "\n\n".join(analyst_sections))
+    if newsapi_sections:
+        extra_sections_texts.append("NewsAPI Headlines:\n" + "\n\n".join(newsapi_sections))
+    if classification_lines:
+        extra_sections_texts.append("Ticker Classification:\n" + "\n".join(classification_lines))
+    #print("Extra Sections Texts:", extra_sections_texts, "\n")
+    print("News Sections:", news_sections, "\n")
+    print("Industry Coverage Sections:", newsapi_sections, "\n")
+
+    prompt_context_parts = []
+    if full_context.strip():
+        prompt_context_parts.append(full_context.strip())
+    prompt_context_parts.extend(extra_sections_texts)
+    prompt_context = "\n\n".join(prompt_context_parts)
+
+    prompt = f"Context:\n{prompt_context}\n\nQuestion: {query}\n\nAnswer:"
+    print("Prompt:", prompt, "\n")
     generated_text = generate_with_openai(prompt)
 
-    if news_sections:
-        generated_text += "\n\nYahoo Finance News:\n" + "\n\n".join(news_sections)
-    if analyst_sections:
-        generated_text += "\n\nAnalyst Targets & Recommendations:\n" + "\n\n".join(analyst_sections)
-    if newsapi_sections:
-        generated_text += "\n\nNewsAPI Headlines:\n" + "\n\n".join(newsapi_sections)
-    if classification_lines:
-        generated_text += "\n\nTicker Classification:\n" + "\n".join(classification_lines)
+    for section_text in extra_sections_texts:
+        generated_text += "\n\n" + section_text
 
     return generated_text
 
