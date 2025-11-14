@@ -34,14 +34,12 @@ def init_pipeline() -> None:
     # The function short-circuits when no valid tickers are detected.
     rag_answer("")
 
-def clean_llm_bold(text):
-    # Remove bolding from inline numbers/metrics
-    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)   # Remove double asterisks
-    text = re.sub(r"__(.*?)__", r"\1", text)        # Remove double underscores
-    # Optionally, keep bolding for lines starting with desired keywords
-    for metric in ["Price to Earnings Ratio", "Current Ratio", "Book Value", "Debt to Equity Ratio"]:
-        pattern = f"({metric}.*?)"
-        text = re.sub(pattern, r"**\1**", text)
+def sanitize_llm_math(text):
+    # Remove LaTeX math mode delimiters ($...$, \( ... \), \[ ... \])
+    text = re.sub(r'\\mord', '', text)  # Remove literal \mord tags
+    text = re.sub(r'\$.*?\$', '', text)  # Remove inline math between dollar signs
+    text = re.sub(r'\\\((.*?)\\\)', '', text)  # Remove \( ... \)
+    text = re.sub(r'\\\[(.*?)\\\]', '', text)  # Remove \[ ... \]
     return text
 
 def main() -> None:
@@ -79,7 +77,7 @@ def main() -> None:
 
         st.markdown("### 🧠 Application Response")
         
-        st.markdown(clean_llm_bold(answer))
+        st.markdown(sanitize_llm_math(answer))
 
 
 if __name__ == "__main__":

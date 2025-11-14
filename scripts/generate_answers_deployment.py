@@ -3,11 +3,15 @@ import os
 import warnings
 import json
 from typing import Dict, Optional
-
+from pathlib import Path
+import sys
 warnings.filterwarnings("ignore", message=".*urllib3 v2 only supports OpenSSL 1.1.1+.*")
 warnings.filterwarnings("ignore", message=".*tokenizers.*")
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 from contextlib import redirect_stdout
 from urllib.error import HTTPError
 
