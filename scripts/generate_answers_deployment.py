@@ -464,17 +464,24 @@ def get_stock_price(ticker):
 
 
 def get_yahoo_news_section(ticker: str) -> str:
+    import sys
+    print(f"DEBUG: get_yahoo_news_section called for {ticker}", file=sys.stderr)
     buffer = io.StringIO()
     try:
         with redirect_stdout(buffer):
             get_top_news_yahoo(ticker, summarize=True)
         output = buffer.getvalue().strip()
+        print(f"DEBUG: Captured output length: {len(output)}", file=sys.stderr)
+        if output:
+            print(f"DEBUG: Output preview: {output[:200]}...", file=sys.stderr)
     except Exception as exc:
+        print(f"DEBUG: Exception in get_yahoo_news_section: {exc}", file=sys.stderr)
         output = f"Error fetching Yahoo Finance news for {ticker}: {exc}"
     finally:
         buffer.close()
 
     if not output:
+        print(f"DEBUG: No output captured for {ticker}, returning fallback message", file=sys.stderr)
         return f"Yahoo Finance news for {ticker} is currently unavailable."
     return output
 
@@ -563,9 +570,14 @@ def rag_answer(query):
     
     if tickers:
         for ticker in tickers:
+            import sys
+            print(f"DEBUG: rag_answer fetching Yahoo news for {ticker}", file=sys.stderr)
             news_output = get_yahoo_news_section(ticker)
+            print(f"DEBUG: rag_answer got news_output length={len(news_output) if news_output else 0} for {ticker}", file=sys.stderr)
             if news_output:
                 news_sections.append(news_output)
+            else:
+                print(f"DEBUG: rag_answer news_output is empty for {ticker}", file=sys.stderr)
             analyst_output = get_analyst_estimates_section(ticker)
             if analyst_output:
                 analyst_sections.append(f"Analyst Estimates for {ticker}:\n{analyst_output}")

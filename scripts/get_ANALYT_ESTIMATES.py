@@ -198,13 +198,18 @@ def fetch_news_newsapi(
 
 
 def summarize_news_with_openai(ticker: str, articles: List[dict], model: Optional[str] = None) -> None:
+    import sys
+    print(f"DEBUG: summarize_news_with_openai called for {ticker} with {len(articles)} articles", file=sys.stderr)
     if not articles:
+        print("DEBUG: No articles provided to summarize", file=sys.stderr)
         return
 
     try:
         client = get_openai_client()
+        print("DEBUG: OpenAI client created successfully", file=sys.stderr)
     except RuntimeError as exc:
         print(f"Skipping OpenAI summarization: {exc}")
+        print(f"DEBUG: Failed to get OpenAI client: {exc}", file=sys.stderr)
         return
 
     selected_model = model or os.getenv("OPENAI_NEWS_MODEL", "gpt-4o-mini")
@@ -242,6 +247,8 @@ def summarize_news_with_openai(ticker: str, articles: List[dict], model: Optiona
     summary_text = response.choices[0].message.content.strip()
     print("\nLLM 5-Point Summary:")
     print(summary_text)
+    import sys
+    print(f"DEBUG: LLM summary generated, length={len(summary_text)}", file=sys.stderr)
 
 
 def summarize_industry_outlook_with_openai(industry: str, articles: List[dict], model: Optional[str] = None) -> None:
@@ -293,20 +300,28 @@ def summarize_industry_outlook_with_openai(industry: str, articles: List[dict], 
 
 
 def get_top_news_yahoo(ticker: str, count: int = 5, summarize: bool = True) -> None:
+    import sys
+    print(f"DEBUG: get_top_news_yahoo called for {ticker}, summarize={summarize}", file=sys.stderr)
+    
     if feedparser is None:
         print("feedparser library not installed; skipping Yahoo Finance RSS news.")
+        print("DEBUG: feedparser is None", file=sys.stderr)
         return
 
     rss_url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
+    print(f"DEBUG: Fetching RSS from {rss_url}", file=sys.stderr)
     feed = feedparser.parse(rss_url)
 
     if hasattr(feed, "bozo_exception") and feed.bozo_exception:
         print(f"Failed to parse Yahoo Finance RSS feed: {feed.bozo_exception}")
+        print(f"DEBUG: RSS parse error: {feed.bozo_exception}", file=sys.stderr)
         return
 
     entries = getattr(feed, "entries", [])[:count]
+    print(f"DEBUG: Found {len(entries)} entries from RSS feed", file=sys.stderr)
     if not entries:
         print("No Yahoo Finance news articles available.")
+        print("DEBUG: No entries found in RSS feed", file=sys.stderr)
         return
 
     articles: List[dict] = []
@@ -333,10 +348,13 @@ def get_top_news_yahoo(ticker: str, count: int = 5, summarize: bool = True) -> N
         )
 
     if summarize:
+        print(f"DEBUG: Attempting to summarize {len(articles)} articles", file=sys.stderr)
         try:
             summarize_news_with_openai(ticker, articles)
+            print("DEBUG: Summarization completed successfully", file=sys.stderr)
         except Exception as exc:
             print(f"Failed to summarize news: {exc}")
+            print(f"DEBUG: Summarization failed: {exc}", file=sys.stderr)
             # Fallback: print raw articles if summarization fails
             print(f"\nTop {len(articles)} Yahoo Finance News Articles for {ticker}:")
             for i, article in enumerate(articles, start=1):
@@ -344,6 +362,14 @@ def get_top_news_yahoo(ticker: str, count: int = 5, summarize: bool = True) -> N
                 if article.get('published'):
                     print(f"   Published: {article['published']}")
                 print(f"   Link: {article.get('link', 'No link available.')}\n")
+    else:
+        print(f"DEBUG: Summarization disabled, printing raw articles", file=sys.stderr)
+        print(f"\nTop {len(articles)} Yahoo Finance News Articles for {ticker}:")
+        for i, article in enumerate(articles, start=1):
+            print(f"{i}. {article.get('title', 'Untitled')}")
+            if article.get('published'):
+                print(f"   Published: {article['published']}")
+            print(f"   Link: {article.get('link', 'No link available.')}\n")
 
 
 if __name__ == "__main__":

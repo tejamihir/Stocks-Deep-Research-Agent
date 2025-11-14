@@ -73,7 +73,14 @@ def main() -> None:
                 answer = rag_answer(user_query.strip())
             except Exception as exc:
                 st.error(f"An error occurred while generating the answer: {exc}")
+                import traceback
+                st.code(traceback.format_exc())
                 return
+
+        # Debug panel (expandable)
+        with st.expander("🔍 Debug Info (Yahoo News)", expanded=False):
+            st.code("Check Streamlit Cloud logs for detailed debug output.\nLook for lines starting with 'DEBUG:'")
+            st.info("If Yahoo news is empty, check:\n1. RSS feed accessibility\n2. OpenAI API key\n3. feedparser installation")
 
         st.markdown("### 🧠 Application Response")
         
