@@ -41,6 +41,14 @@ def sanitize_llm_math(text):
     text = re.sub(r'\\\((.*?)\\\)', '', text)  # Remove \( ... \)
     text = re.sub(r'\\\[(.*?)\\\]', '', text)  # Remove \[ ... \]
     return text
+def enhance_headings(markdown_text):
+    # Make H2 headings larger using HTML
+    markdown_text = re.sub(
+        r'^## (.+)$',
+        r"<h2 style='font-size:2.25em;margin-top:2em;margin-bottom:0.8em;'>\1</h2>",
+        markdown_text, flags=re.MULTILINE
+    )
+    return markdown_text
 
 def main() -> None:
     st.set_page_config(page_title="FinNova AI", layout="wide")
@@ -77,14 +85,9 @@ def main() -> None:
                 st.code(traceback.format_exc())
                 return
 
-        # Debug panel (expandable)
-        with st.expander("🔍 Debug Info (Yahoo News)", expanded=False):
-            st.code("Check Streamlit Cloud logs for detailed debug output.\nLook for lines starting with 'DEBUG:'")
-            st.info("If Yahoo news is empty, check:\n1. RSS feed accessibility\n2. OpenAI API key\n3. feedparser installation")
-
         st.markdown("### 🧠 Application Response")
         
-        st.markdown(sanitize_llm_math(answer))
+        st.markdown(enhance_headings(sanitize_llm_math(answer)))
 
 
 if __name__ == "__main__":
