@@ -23,7 +23,7 @@ from sentence_transformers import SentenceTransformer
 import openai
 import yfinance as yf
 
-from get_ANALYT_ESTIMATES import (
+from scripts.get_ANALYT_ESTIMATES import (
     fetch_news_newsapi,
     get_analyst_estimates_and_price_target,
     get_top_news_yahoo,
