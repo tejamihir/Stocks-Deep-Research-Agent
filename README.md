@@ -1,2 +1,2 @@
-# StockSage AI application
-StockSage AI is an intelligent financial research application built to provide actionable insights on stocks and financial data. It leverages a RAG (Retrieval-Augmented Generation) workflow to retrieve relevant information and generate comprehensive answers for user queries. The codebase maintains the application’s core functionality, including data retrieval, analysis, and interactive query handling. Currently, it only supports tickers in S&P 500
+# Finnova AI application
+Finnova AI is an intelligent financial research application built to provide actionable insights on stocks and financial data. It leverages a RAG (Retrieval-Augmented Generation) workflow to retrieve relevant information and generate comprehensive answers for user queries. The codebase maintains the application’s core functionality, including data retrieval, analysis, and interactive query handling. Currently, it only supports tickers in S&P 500
