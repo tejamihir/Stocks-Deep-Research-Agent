@@ -17,27 +17,25 @@ Finnova AI is an intelligent financial research application that provides **acti
   **Streamlit** frontend with interactive querying, session state management, and dual-display of NL answers + retrieved context (tables, charts, sources).
 
 - **Technical Architecture**
-  
-flowchart TD
-    %% Title
-    A[Analyze Apple stock]:::title
+
+  flowchart TD
+    A[Analyze Apple stock]
 
     %% Layer 1: Dynamic Data Fetch
     A --> B[Dynamic Data Fetch]
 
-    B --> B1[Yahoo Finance<br/>Price / OHLCV]
-    B --> B2[News API<br/>Headlines]
-    B --> B3[Vector DB<br/>Fin. Statements<br/>(Balance Sheet, Income, Cash)]
+    B --> B1[Yahoo Finance\nPrice / OHLCV]
+    B --> B2[News API\nHeadlines]
+    B --> B3[Vector DB\nFin. Statements\n(Balance Sheet, Income, Cash)]
     B --> B4[Analyst Ratings]
     B --> B5[Industry Outlook]
 
     %% Layer 2: Semantic Retrieval
-    B --> C[Semantic Retrieval<br/>Embed Query → Similarity Search → Top‑K Context]
+    B --> C[Semantic Retrieval\nEmbed Query → Similarity Search → Top‑K Context]
 
     %% Layer 3: LLM Generation
-    C --> D[LLM Generation<br/>Query + Multi‑Source Context → Grounded Answer]
+    C --> D[LLM Generation\nQuery + Multi‑Source Context → Grounded Answer]
 
-    classDef title fill=#111,color=#fff,stroke=#333,stroke-width=1px;
 
 
 ## Tech Stack
