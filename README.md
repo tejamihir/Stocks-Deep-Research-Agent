@@ -1,9 +1,36 @@
-# Finnova AI – RAG‑powered Equity Research Assistant
-Finnova AI is an intelligent financial research application that provides actionable, ticker‑level insights on U.S. equities, currently scoped to the S&P 500 universe. It uses a Retrieval‑Augmented Generation (RAG) pipeline to ground large language model responses in up‑to‑date market and fundamentals data, reducing hallucinations and enabling explainable outputs. 
-Under the hood, the app orchestrates:
-	•	Data ingestion & retrieval: Fetches real‑time and historical market data, fundamentals, and news via external APIs, then normalizes and indexes this data into a vector store for semantic retrieval over company‑specific context (e.g., price history, key ratios, business descriptions). 
-	•	RAG workflow: For each user query, a retriever component selects the most relevant financial documents/snippets, which are then injected into the LLM prompt so that generated answers are explicitly grounded in retrieved evidence. 
-	•	Analytics & aggregation layer: Implements Python-based analytics for return statistics, simple factor-style metrics, and comparative summaries across tickers (within the S&P 500 universe), which are surfaced as part of the model’s response. 
-	•	Application layer: A Streamlit front end (or similar web UI) handles interactive querying, session state, and display of both the natural‑language answer and the underlying retrieved context (e.g., tables, charts, and source snippets). 
-The codebase encapsulates the full stack of this workflow: API client modules for data acquisition, retrieval and vector indexing logic, RAG orchestration, and an interactive query interface for end users.
-Link to Streamlit application-
+# Finnova AI – RAG-powered Equity Research Assistant
+
+Finnova AI is an intelligent financial research application that provides **actionable, ticker-level insights** on U.S. equities (currently scoped to S&P 500). It uses a **Retrieval-Augmented Generation (RAG)** pipeline to ground LLM responses in real-time market and fundamentals data, reducing hallucinations while enabling explainable outputs.
+
+## Core Components
+
+- **Data Ingestion & Retrieval**  
+  Fetches real-time/historical market data, fundamentals, and news via external APIs. Normalizes and indexes into a **vector store** for semantic retrieval of company-specific context (price history, key ratios, business descriptions).
+
+- **RAG Workflow**  
+  Query → **Retriever** selects top-k relevant financial documents → Injects into LLM prompt → Generates grounded, evidence-based answers.
+
+- **Analytics Layer**  
+  Python-based computations for return statistics, factor-style metrics, and cross-ticker comparisons (S&P 500 scope).
+
+- **Application Layer**  
+  **Streamlit** frontend with interactive querying, session state management, and dual-display of NL answers + retrieved context (tables, charts, sources).
+
+- **Technical Architecture**
+  
+Analyze Apple stock │ ▼ ┌─────────────────────────────────────────────────────┐ │              Dynamic Data Fetch                     │ │  ┌─────────────────┐  ┌──────────────────┐  ┌─────────────────┐ │  │ Yahoo Finance   │  │    News API      │  │   Vector DB     │ │  │ -  Price/OHLCV   │  │ -  Headlines      │  │ -  Fin Statements│ │  │ -  Analyst Ratings│ │ -  Industry Outlook││ (Balance Sheet, │ │  └─────────────────┘  └──────────────────┘  │  Income, Cash)  │ │                                             └─────────────────┘ └─────────────────────────────────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────────────┐ │                Semantic Retrieval                   │ │  Embed Query → Similarity Search → Top-K Context    │ └─────────────────────────────────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────────────┐ │             LLM Generation                          │ │  Query + Multi-Source Context → Grounded Answer     │ └─────────────────────────────────────────────────────┘ │
+
+
+## Tech Stack
+Frontend: Streamlit 
+Backend: Python
+Data: Vector DB (Chroma), 
+APIs- Yahoo Finance, NewsAPI
+Infra: Streamlit Cloud deployable and docker ready
+
+## Live Demo
+## 🔮 Future Roadmap
+- Expand to full US market + international equities
+- Complex user queries support- 'Is NVIDIA overvalued?', 'Top 5 stocks in IT Industry'
+- Multi-modal RAG (SEC filings, earnings transcripts)
+
