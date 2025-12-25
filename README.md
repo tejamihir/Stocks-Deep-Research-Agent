@@ -16,26 +16,6 @@ Finnova AI is an intelligent financial research application that provides **acti
 - **Application Layer**  
   **Streamlit** frontend with interactive querying, session state management, and dual-display of NL answers + retrieved context (tables, charts, sources).
 
-- **Technical Architecture**
-
-  flowchart TD
-    A[Analyze Apple stock]
-
-    %% Layer 1: Dynamic Data Fetch
-    A --> B[Dynamic Data Fetch]
-
-    B --> B1[Yahoo Finance\nPrice / OHLCV]
-    B --> B2[News API\nHeadlines]
-    B --> B3[Vector DB\nFin. Statements\n(Balance Sheet, Income, Cash)]
-    B --> B4[Analyst Ratings]
-    B --> B5[Industry Outlook]
-
-    %% Layer 2: Semantic Retrieval
-    B --> C[Semantic Retrieval\nEmbed Query → Similarity Search → Top‑K Context]
-
-    %% Layer 3: LLM Generation
-    C --> D[LLM Generation\nQuery + Multi‑Source Context → Grounded Answer]
-
 
 
 ## Tech Stack
@@ -46,6 +26,8 @@ APIs- Yahoo Finance, NewsAPI
 Infra: Streamlit Cloud deployable and docker ready
 
 ## Live Demo
+https://finnova.streamlit.app/
+
 ## 🔮 Future Roadmap
 - Expand to full US market + international equities
 - Complex user queries support- 'Is NVIDIA overvalued?', 'Top 5 stocks in IT Industry'
