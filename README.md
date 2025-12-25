@@ -18,7 +18,26 @@ Finnova AI is an intelligent financial research application that provides **acti
 
 - **Technical Architecture**
   
-Analyze Apple stock │ ▼ ┌─────────────────────────────────────────────────────┐ │              Dynamic Data Fetch                     │ │  ┌─────────────────┐  ┌──────────────────┐  ┌─────────────────┐ │  │ Yahoo Finance   │  │    News API      │  │   Vector DB     │ │  │ -  Price/OHLCV   │  │ -  Headlines      │  │ -  Fin Statements│ │  │ -  Analyst Ratings│ │ -  Industry Outlook││ (Balance Sheet, │ │  └─────────────────┘  └──────────────────┘  │  Income, Cash)  │ │                                             └─────────────────┘ └─────────────────────────────────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────────────┐ │                Semantic Retrieval                   │ │  Embed Query → Similarity Search → Top-K Context    │ └─────────────────────────────────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────────────┐ │             LLM Generation                          │ │  Query + Multi-Source Context → Grounded Answer     │ └─────────────────────────────────────────────────────┘ │
+flowchart TD
+    %% Title
+    A[Analyze Apple stock]:::title
+
+    %% Layer 1: Dynamic Data Fetch
+    A --> B[Dynamic Data Fetch]
+
+    B --> B1[Yahoo Finance<br/>Price / OHLCV]
+    B --> B2[News API<br/>Headlines]
+    B --> B3[Vector DB<br/>Fin. Statements<br/>(Balance Sheet, Income, Cash)]
+    B --> B4[Analyst Ratings]
+    B --> B5[Industry Outlook]
+
+    %% Layer 2: Semantic Retrieval
+    B --> C[Semantic Retrieval<br/>Embed Query → Similarity Search → Top‑K Context]
+
+    %% Layer 3: LLM Generation
+    C --> D[LLM Generation<br/>Query + Multi‑Source Context → Grounded Answer]
+
+    classDef title fill=#111,color=#fff,stroke=#333,stroke-width=1px;
 
 
 ## Tech Stack
